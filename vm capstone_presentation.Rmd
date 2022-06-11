@@ -1,0 +1,751 @@
+---
+title: "Capstone: Veggie Mijas Data"
+author: "Este Rodriguez"
+date: "12/07/2021"
+output:
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    theme:
+      bootswatch: sandstone
+---
+```{r packages and libraries, include=FALSE, warning=FALSE}
+#install.packages("readxl")
+#install.packages("knitr")
+#install.packages('spData')
+#install.packages('usmap')
+#install.packages("tidyverse")
+#install.packages("treemapify")
+#install.packages('gridExtra')
+#install.packages("shiny")
+#install.packages("plotly")
+#install.packages("imager")
+library(tibble)
+library(readxl)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(spData)
+library(maps)
+library(usmap)
+library(lubridate)
+library(treemapify)
+library(gridExtra)
+library(flexdashboard)
+library(knitr)
+library(shiny)
+library(plotly)
+library(imager)
+library(grid)
+
+#custom color palette
+vm_colors <- c(
+  `light sage` = "#dcd6ca",
+  `lime green` = "#d0c393",
+  `yellow cream` = "#f8cfa2",
+  `orange cream` = "#f0a278",
+  `gray cream` = "#a4a697",
+  `light forest green` = "#a19862",
+  `sun ray`  = "#f1bc6f",
+  `clementine` = "#df8252",
+  `dark slate gray` = "#525a4e",
+  `forest green` = "#6b6839",
+  `dark goldenrod` = "#df8b44",
+  `aged brick` = "#ac6745",
+  `deep cranberry` = "#822519",
+  `deep rust` = "#873e1e",
+  `cocoa` = "#4b2d20")
+
+vm_cols <- function(...){
+  cols <- c(...)
+  if (is.null(cols))
+    return (vm_colors)
+  vm_colors[cols]
+  }
+# vm_cols('light sage') -> check if function works. it works!
+
+#combine colors into palettes
+vm_palettes <- list(
+  `main` = vm_cols("dark slate gray", "forest green", "dark goldenrod", "aged brick"),
+  `light` = vm_cols("light sage", "lime green", "yellow cream", "orange cream"),
+  `medium` = vm_cols("gray cream", "light forest green", "sun ray", "clementine"),
+  `deep` = vm_cols("deep cranberry", "deep rust", "cocoa"))
+vm_pal <- function(palette = "main", reverse = FALSE, ...) {
+  pal <- vm_palettes[[palette]]
+  if (reverse) pal <- rev(pal)
+  colorRampPalette(pal, ...)
+}
+# vm_pal("light")(10) -> creates shades between the original colors
+#custom color and fill scale functions for ggplot2
+scale_color_vm <- function(palette = "main", discrete = TRUE, reverse = FALSE, ...) {
+  pal <- vm_pal(palette = palette, reverse = reverse)
+  if (discrete) {
+    discrete_scale("colour", paste0("vm_", palette), palette = pal, ...)
+  } else {
+    scale_color_gradientn(colours = pal(256), ...)
+  }
+}
+scale_fill_vm <- function(palette = "main", discrete = TRUE, reverse = FALSE, ...) {
+  pal <- vm_pal(palette = palette, reverse = reverse)
+
+  if (discrete) {
+    discrete_scale("fill", paste0("vm_", palette), palette = pal, ...)
+  } else {
+    scale_fill_gradientn(colours = pal(256), ...)
+  }
+}
+setwd("C:/Users/rodri/OneDrive/Documents/MSDA/2021-FALL/Capstone/Data")
+```
+
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+# Introduction 
+
+### <b><font face="Georgia" size="2em" color="#000000">Who is Veggie Mijas?</font></b>
+
+* Started in August 2017 for college students who wanted easy plant based recipes
+* Became a collective focused on sharing recipes and building community throughout the U.S.
+* Centers women, trans folks, and gender non-conforming folks of color that are interested in being plant-based. 
+* First potluck was held in the Bronx back in March 2018. Now, they have about 11 active U.S. chapters: New York, NY | Orlando, FL | Denver, CO | Los Angeles, CA | Seattle, WA | Chicago, IL | Philadelphia, PA | Austin, TX | Bay Area, CA | Washington, DC | Houston, TX
+
+* Mission Statement: “… create sacred spaces for folks where they can share their experiences with food or having a plant-based lifestyle through an intersectional lens.”
+
+### <b><font face="Georgia" size="2em" color="#000000">Veggie Mijas' Data Collection</font></b>
+
+* Collects data on folks interested in what Veggie Mijas has to offer, current collective members, and the attendees of their events.
+* Collective list and interest form are organized through Google Sheets. Event data is gathered from Eventbrite.
+* Main responsibility as data specialist: update the collective list at least once a week with any new entries from the interest form.
+* Veggie Mijas’ leadership data was gathered over the summer (June 2021) for Dr. Mhoon’s Biostatistics class. 
+
+```{r, fig.align='right', fig.width=20, fig.height=5}
+#knitr::include_graphics("TransparentLogo2.jpg")
+par(mar = c(2, 2, 6, 2))
+logo <- load.image("TransparentLogo.jpg"); plot(logo, axes = FALSE)
+```
+
+# Questions to Answer  
+
+### <b><font face="Georgia" size="2em" color="#000000">Capstone Questions</font></b>  
+
+* What reach does Veggie Mijas has in the United States?  
+* Is there a relationship between the number of events held by our Veggie Mijas chapters and the number of interests that we garner per month?  
+* What are the top 5 states with the greatest amount of interest?  
+* Can we see interested folks reflected in the leadership?  
+* Are the folks interested in the collective also attending the events? What does the ratio look like of tickets reserved vs total tickets available?  
+* Is there a particular food lifestyle that the interested folks follow in each U.S. region?  
+* Is there a relationship between pronouns and food lifestyle?
+
+My goal with this capstone project was to gain overall insight on the impact of Veggie Mijas and give them recommendations based on the visualizations I created in the hopes that it would support their efforts. 
+
+```{r Import Data, include=FALSE}
+setwd("C:/Users/rodri/OneDrive/Documents/MSDA/2021-FALL/Capstone/Data")
+vm_collective <- read_excel('Total VM Data.xlsx', sheet = "August 2021")
+vm_interests <- read_excel('Total VM Data.xlsx', sheet = "Interest Form (English)")
+vm_events <- read_excel('VM Events.xlsx', sheet = "VM Events")
+vm_leadership <- read_excel('VM Leadership.xlsx', sheet = "Data")
+```
+
+
+# Phase I: Reduce and Cleanse VM Collective Data {data-navmenu="Project Sections"}
+
+## Step by Step {.tabset}
+
+### <b><font face="Georgia" size="2em" color="#000000">Step 1: Reduce Variables - Collective</font></b>
+
+* Dataset is a reformatted version of the original collective list, with the addition of new interests  
+
+* Original dataset: divided into state tabs for collective members to browse through others listed in their cities  
+
+* New dataset: shows all entries on one sheet with the same original fields  
+
+* Dropped columns by name so the ending result was only City, State, and Pronouns. 
+
+```{r PI Step 1}
+vm_collective <- vm_collective[ , -which(names(vm_collective) %in% c("Email", "Name", "Specified Region", "Ethnicity", "Instagram Account", "Talent/Skill to Share" ))]; vm_collective <- na.exclude(vm_collective); colnames(vm_collective) <- c('city', 'state', 'pronouns'); vm_collective
+```
+
+### <b><font face="Georgia" size="2em" color="#000000">Step 2A: Cleanse Data - Collective (Pronouns)</font></b>
+
+* lowercased and removed all punctuation, then checked the frequency for each value  
+
+* created a T/F matrix to check if each entry contained a certain word. Once this was complete, it was able to assign predetermined pronoun groups to each entry.  
+
+Gender identity is very personal, so Veggie Mijas first implemented the option for folks to write in their own pronouns. Given the spectrum of gender, the answers varied and were all over the place. For the sake of cleanliness and viewing the data accurately, I have assigned pronoun groups to each of the unique values that were recorded. There are as follows:  
+
+* SHH | ST |HHH | HT |TTT |all | other
+
+```{r PI Step 2A, message=FALSE}
+vm_collective$pronouns <- tolower(vm_collective$pronouns); vm_collective$pronouns <- gsub("[[:punct:]]", " ", vm_collective$pronouns); vm_collective$pronouns <- gsub("\n", "", vm_collective$pronouns)
+collective.prns <- sort(table(vm_collective$pronouns), decreasing = TRUE); collective.prns <- as.data.frame(collective.prns)
+
+w1 <- c("she", "her", "hers", "he", "him", "they", "them", "two spirit", "undecided", "all")
+pronoun.tfmatrix <- as.data.frame(sapply(as.character(w1), grepl, collective.prns$Var1)); head(pronoun.tfmatrix,5)
+
+pronoun.tfmatrix <- pronoun.tfmatrix %>% mutate(PG =
+                     case_when(all == "TRUE" ~ "all",
+                               pronoun.tfmatrix$`two spirit` == "TRUE"~ "all",
+                               she & they == "TRUE" ~ "ST",
+                               her & they == "TRUE" ~ "ST",
+                               she & them == "TRUE" ~ "ST",
+                               they & them == "TRUE" ~ "TTT",
+                               he & they == "TRUE" ~ "HT",
+                               they | them == "TRUE" ~ "TTT",
+                               she & her & hers == "TRUE" ~ "SHH",
+                               she & her == "TRUE" ~ "SHH",
+                               she == "TRUE" ~ "SHH",
+                               her == "TRUE" ~ "SHH",
+                               he & him == "TRUE" ~ "HHH",
+                               undecided == "TRUE" ~ "other"))
+collective.prns <- cbind(collective.prns, pronoun.tfmatrix$PG); colnames(collective.prns) <- c('personal_pronouns', 'frequency', 'pronoun_group'); collective.prns[19,3] <- 'all'; collective.prns[c(21:23, 25),3] <- 'other'; collective.prns[38,3] <- 'TTT'; collective.prns
+pg.agg <- aggregate(frequency ~ pronoun_group, collective.prns, sum) #pg.agg[order(-pg.agg$frequency),]
+```
+
+### <b><font face="Georgia" size="2em" color="#000000">Step 2B: Cleanse Data - Collective (City/State)</font></b>
+
+* Dropped “Specified Region/Hood” given the complexity of each answer given  
+
+* States were from a dropdown menu, but cities did not have this option at the time– this led to multiple discrepancies in each entry  
+
+* Excluded the null values because those were for international entries  
+
+* Filtered if city and state contained more than 10 entries. Once they hit more than 15 entries, then I would notify the Recruitment Director. These cities and states would be monitored for changes.
+
+```{r PI Step 2B}
+vm_collective[,1:2] #checking city and state names after excluding null values
+vm_collective[378,1] <- 'Ames'; vm_collective[534,1] <- 'Beverly'; vm_collective[378,2] <- 'Iowa'; vm_collective[534,2] <- 'New Jersey' #vm_collective[c(378, 534),1:2] --> adjusting both anomolies to one city 
+vm_collective[vm_collective$city == "Brooklyn",1] <- 'New York'
+vm_collective[vm_collective$city == "NYC",1] <- 'New York'
+vm_collective[vm_collective$city == "Bronx",1] <- 'New York'
+vm_collective[vm_collective$city == "Queens",1] <- 'New York'
+vm_collective[vm_collective$city == "Manhattan",1] <- 'New York'
+collective.loc <- sort(table(vm_collective$city), decreasing = TRUE); collective.loc <- as.data.frame(collective.loc); colnames(collective.loc) <- c('us_city', 'frequency') #checking the frequency of collective members per city
+total.collectiveloc <- subset(collective.loc, frequency >= 10); total.collectiveloc$us_state <- c('New York', 'Texas', 'California', 'Illinois', 'Texas', 'Texas', 'District of Columbia', 'Florida', 'Washington', 'Pennsylvania', 'California', 'Colorado', 'California', 'California', 'Nevada', 'Massachusetts', 'Louisiana'); 
+total.collectiveloc <- total.collectiveloc %>% relocate(us_state, .after = us_city); loc.agg <- aggregate(frequency ~ us_state, total.collectiveloc, sum); total.collectiveloc #loc.agg[order(-loc.agg$frequency),]
+
+total.collectiveloc <- total.collectiveloc %>%
+  mutate(cond = case_when(
+    frequency > 15 ~ vm_cols('forest green'),
+    frequency < 15 ~ vm_cols('light forest green')
+    )) #assign colors based on frequency
+total.collectiveloc$abbr <- state.abb[match(total.collectiveloc$us_state,state.name)]
+total.collectiveloc[total.collectiveloc$us_state == "District of Columbia", c("abbr")] <- 'DC'
+total.collectiveloc$loc <- str_c(total.collectiveloc$us_city,", ", total.collectiveloc$abbr) #creating city and state labels
+```
+
+# Phase II: Reduce and Cleanse VM Interest Form Data {data-navmenu="Project Sections"}
+
+## Step by Step {.tabset}
+
+### <b><font face="Georgia" size="2em" color="#000000">Step 1: Reduce Variables - Interests</font></b>
+
+* Dataset was from a Google Form that I developed as my first task as data specialist. Dates from Sept 2019 to Aug 2021.  
+
+* Distributed by Veggie Mijas members through social media and chapter events  
+
+* Dropped columns by index since the names were questions from the Google Form  
+
+* Dropped any entries past Aug 31st to match the collective list for the visualizations
+
+```{r PII Step 1}
+vm_interests <- vm_interests[ -c(2, 4:5, 7, 9:11, 13:17) ]; vm_interests <- na.exclude(vm_interests); colnames(vm_interests) <- c('timestamp', 'food_lifestyle', 'city', 'state', 'pronouns')
+vm_interests <- vm_interests[-c(568, 569, 570, 571, 572, 573, 574, 575, 576, 577, 578),]; vm_interests
+```
+
+### <b><font face="Georgia" size="2em" color="#000000">Step 2A: Cleanse Data - Interests (Food Lifestyle)</font></b>
+
+Veggie Mijas is intentional with the language they use in their communications. When they were developing this form, they settled on using "Food Lifestyle" to have folks describe how they choose to consume food on a day to day basis. The word "diet" can be triggering for folks, so this is also why they were considering different language. Similar to the pronouns, folks were given the option to select from a list or self-describe. For the purposes of organizing the data, I chose to sort them into the following categories:  
+
+* Vegan/Plant-Based - There are distinct differences between being vegan and plant-based (for reference: https://theveganreview.com/vegan-vs-plant-based-what-is-the-difference/). It all stems from why people initially choose to switch over to either. I can see how important it is for the Veggie Mijas collective to collect this kind of information. For this project, I just chose to merge them into one category for the sake of simplicity. 
+* Transitioning - someone who considers themselves as transitioning would mean they are starting to learn more about a vegan/plant-based lifestyle and wanting to implement this.
+* Vegetarian - This follows the traditional definition, where these folks do not eat meat but may consider animal products.
+* Omnivore - This label sounds very outdated, but it is meant for folks who do not restrict what they eat.  
+* Pescatarian - This follows the traditional definition, where the only meat they consume is seafood. 
+* Other - This category is for folks who do not know what kind of food lifestyle or preferred not to answer.
+
+```{r PII Step 2A}
+vm_interests$food_lifestyle <- tolower(vm_interests$food_lifestyle); vm_interests$food_lifestyle <- gsub("[[:punct:]]", " ", vm_interests$food_lifestyle); vm_interests$food_lifestyle <- gsub("\n", "", vm_interests$food_lifestyle) #cleansing text
+interests.fl <- sort(table(vm_interests$food_lifestyle), decreasing = TRUE); interests.fl <- as.data.frame(interests.fl); colnames(interests.fl) <- c('food_lifestyle', 'frequency') #frequency table
+
+w2 <- c("vegan", "plant", "mostly", "vegetarian", "transition", "omnivore", "pescatarian", "prefer not to answer", "learn", "try", "flex", "fish", "chicken", "turkey", "research", "work")
+fl.tfmatrix <- as.data.frame(sapply(as.character(w2), grepl, interests.fl$food_lifestyle)); head(fl.tfmatrix,5)
+fl.tfmatrix <- fl.tfmatrix %>% mutate(fl_type =
+                                        case_when(
+                                          transition | learn | try | research | work == "TRUE" ~ "Transitioning",
+                                          vegan | plant == "TRUE" ~ "Vegan/Plant Based",
+                                          mostly | flex == "TRUE"~ "Vegan/Plant Based",
+                                          vegetarian == "TRUE" ~ "Vegetarian",
+                                          omnivore | fish | chicken | turkey == "TRUE" ~ "Omnivore",
+                                          pescatarian == "TRUE" ~ "Pescatarian",
+                                          fl.tfmatrix$`prefer not to answer` == "TRUE" ~ "Other"))
+interests.fl <- cbind(interests.fl, fl.tfmatrix$fl_type); colnames(interests.fl) <- c('food_lifestyle', 'frequency', 'lifestyle_group'); interests.fl[15,3] <- 'Transitioning'; interests.fl[c(16, 40),3] <- 'Other'
+fl.agg <- aggregate(frequency ~ lifestyle_group, interests.fl, sum); fl.agg[order(-fl.agg$frequency),]
+```
+
+### <b><font face="Georgia" size="2em" color="#000000">Step 2B: Cleanse Data - Interests (Pronouns)</font></b>
+
+I used the same method to cleanse this data like the pronouns for the collective. Gender identity is on a spectrum that can be difficult to gather data on. As a result, the answers varied and were all over the place. For the sake of cleanliness and viewing the data accurately, I have assigned pronoun groups to each of the unique values that were recorded. To recall, these are the categories of each pronoun group:  
+
+* SHH | ST | HHH | HT | TTT | all | other
+
+```{r PII Step 2B}
+vm_interests$pronouns <- tolower(vm_interests$pronouns); vm_interests$pronouns <- gsub("[[:punct:]]", " ", vm_interests$pronouns); vm_interests$pronouns <- gsub("\n", "", vm_interests$pronouns)
+interests.prns <- sort(table(vm_interests$pronouns), decreasing = TRUE); interests.prns <- as.data.frame(interests.prns)
+
+pronoun.tfmatrix2 <- as.data.frame(sapply(as.character(w1), grepl, interests.prns$Var1)); head(pronoun.tfmatrix2,5)
+
+pronoun.tfmatrix2 <- pronoun.tfmatrix2 %>% mutate(PG =
+                     case_when(all == "TRUE" ~ "all",
+                               pronoun.tfmatrix2$`two spirit` == "TRUE"~ "all",
+                               she & they == "TRUE" ~ "ST",
+                               her & they == "TRUE" ~ "ST",
+                               she & them == "TRUE" ~ "ST",
+                               they & them == "TRUE" ~ "TTT",
+                               he & they == "TRUE" ~ "HT",
+                               they | them == "TRUE" ~ "TTT",
+                               she & her & hers == "TRUE" ~ "SHH",
+                               she & her == "TRUE" ~ "SHH",
+                               she == "TRUE" ~ "SHH",
+                               her == "TRUE" ~ "SHH",
+                               he & him == "TRUE" ~ "HHH",
+                               undecided == "TRUE" ~ "other"))
+interests.prns <- cbind(interests.prns, pronoun.tfmatrix2$PG); colnames(interests.prns) <- c('personal_pronouns', 'frequency', 'pronoun_group'); interests.prns[c(5,10,11,12,14,22),3] <- 'other'
+pg.agg2 <- aggregate(frequency ~ pronoun_group, interests.prns, sum); pg.agg2[order(-pg.agg2$frequency),]
+```
+
+### <b><font face="Georgia" size="2em" color="#000000">Step 2C: Cleanse Data - Interests (City/State) </font></b>
+
+Similar situation to the Collective List:  
+
+* Dropped “Specified Region/Hood” given the complexity of each answer given  
+
+* States were from a dropdown menu, but cities did not have this option at the time– this led to multiple discrepancies in each entry  
+
+* Excluded the null values because those were for international entries  
+
+* Filtered if city and state contained more than 10 entries. Once they hit more than 15 entries, then I would notify the Recruitment Director. These cities and states would be monitored for changes.
+
+```{r PII Step 2C}
+vm_interests$city <- tolower(vm_interests$city)
+vm_interests$state <- tolower(vm_interests$state)
+vm_interests %>%
+ select(city, state) %>%   
+ filter(str_detect(city, "/")) #checking for anomolies
+vm_interests <- vm_interests[!(vm_interests$city == "n/a" | vm_interests$state == "n/a" ),] #remove all rows that include "n/a" in city and state columns
+vm_interests %>%
+  select(city, state) %>%
+  filter(str_detect(city, "/")) # checking for anomolies again
+vm_interests$city <- gsub("/.*","",vm_interests$city) #removes text after / in the city column
+vm_interests$city <- gsub(",.*","",vm_interests$city) #removes text after , in the city column
+vm_interests$city <- gsub("[[:punct:]]", "", vm_interests$city) #removes punctuation
+vm_interests <- vm_interests[!(vm_interests$city == "na"),]
+vm_interests[vm_interests$city == "washington dc",4] <- 'dc'
+vm_interests[vm_interests$city == "washington dc",3] <- 'washington'
+vm_interests[vm_interests$city == "dc",3] <- 'washington'
+vm_interests[vm_interests$city == "nyc",3] <- 'new york city'
+vm_interests[9,3] <- 'chino hills'
+vm_interests[150,3] <- 'jacksonville'
+vm_interests[167,3] <- 'mckinney'
+vm_interests[242,3] <- 'houston'
+vm_interests[266,3] <- 'san diego'
+vm_interests[282,3] <- 'berkeley'
+vm_interests[334,3] <- 'silver spring'
+vm_interests[341,3] <- 'washington'
+vm_interests[341,4] <- 'dc'
+vm_interests[363,3] <- 'los angeles'
+vm_interests[370,3] <- 'east windsor'
+vm_interests[c(422,491),3] <- 'broomfield'
+vm_interests[457,3] <- 'brooklyn'
+vm_interests[500,3] <- 'santa cruz'
+vm_interests <- vm_interests[-471,] #dropping the row for not having a real city
+
+vm_interests$city <- gsub("(^|[[:space:]])([[:alpha:]])", "\\1\\U\\2",    # Uppercase with Base R
+     vm_interests$city,
+     perl = TRUE) #capitalize the city names again
+
+interest.loc <- sort(table(vm_interests$city), decreasing = TRUE); interest.loc <- as.data.frame(interest.loc); colnames(interest.loc) <- c('us_city', 'frequency') # interest.loc
+total.interestloc <- subset(interest.loc, frequency >= 10); total.interestloc$us_state <- c("Texas", "California", "Illinois", "Texas", "New York", "Colorado", "Washington",  "New York", "Pennsylvania", "New York", "Nevada", "Louisiana", "Texas", "California"); total.interestloc <- total.interestloc %>% relocate(us_state, .after = us_city); total.interestloc
+
+iloc.agg <- aggregate(frequency ~ us_state, total.interestloc, sum) # iloc.agg[order(-iloc.agg$frequency),]
+
+interest.loc2 <- sort(table(vm_interests$state), decreasing = TRUE); interest.loc2 <- as.data.frame(interest.loc2) #checking the total interests per state
+
+total.interestloc <- total.interestloc %>%
+  mutate(cond = case_when(
+    frequency > 15 ~ vm_cols('forest green'),
+    frequency < 15 ~ vm_cols('light forest green')
+    )) # assign colors based on frequency
+total.interestloc$abbr <- state.abb[match(total.interestloc$us_state,state.name)]
+total.interestloc[total.interestloc$us_state == "District of Columbia", c("abbr")] <- 'DC'
+total.interestloc$loc <- str_c(total.interestloc$us_city,", ", total.interestloc$abbr) #create city and state labels
+```
+
+# Phase III: Cleanse VM Eventbrite Data {data-navmenu="Project Sections"}
+
+### <b><font face="Georgia" size="2em" color="#000000">Cleanse Data - Events</font></b>
+
+These events were pulled from their Eventbrite account, starting all the way back in 2019. I removed any events listed as Draft, Live, or Cancelled since these would not show accurate data of ticket sales. I ended up adding a new column called `ticket_ratio` so we could see the total tickets sold to total tickets that were made available.  
+
+```{r PIII Step 1}
+vm_events <- vm_events[!(vm_events$Status == "Draft" | vm_events$Status == "Live" | vm_events$Status == "Canceled" ),]; vm_events <- vm_events[!(vm_events$Date == "Repeating Event"),]; vm_events <- vm_events[-22,]; vm_events$ticket_ratio <- round(vm_events$`Tickets Sold`/(vm_events$`Tickets Sold`+vm_events$`Tickets Available`), 2)
+vm_events$Date <- as.Date(as.numeric(vm_events$Date), origin = "1899-12-30"); vm_events
+```
+
+# Phase IV: Filter City and State Population Data {data-navmenu="Project Sections"}
+
+### <b><font face="Georgia" size="2em" color="#000000">Filter Data - City and State Population Estimate</font></b>
+
+This dataset was pulled from the U.S. Census website (https://www.census.gov/programs-surveys/popest/technical-documentation/research/evaluation-estimates/2020-evaluation-estimates/2010s-cities-and-towns-total.html). I noticed that all the rows with cities I needed fell under the column `SUMLEV` that equals 162. The SUMLEV column is described as the geographic summary level, where 162 is the code for incorporated place. I also noticed that all the city populations I needed would be higher than 300,000. This is why I filtered the data to show the cities under these conditions.  
+
+```{r PIV}
+pop.est <- read_excel('City Population Estimates.xlsx', sheet = "City Population Estimates")
+pop.est <- filter(pop.est, SUMLEV>=162); pop.est$CENSUS2010POP <- as.numeric(pop.est$CENSUS2010POP)
+pop.est <- pop.est %>%
+  select(SUMLEV, NAME, STNAME, CENSUS2010POP) %>%
+ filter(CENSUS2010POP > 300000)
+pop.est$NAME <- str_remove(pop.est$NAME, fixed(" city"))
+
+cities <- c("New York", "Austin", "Los Angeles",  "Chicago",  "Dallas",  "Houston",  "Washington",  "Miami",  "Seattle",  "Philadelphia",  "Oakland",  "Denver",  "San Francisco",  "San Diego",  "Las Vegas",  "Boston", "New Orleans")
+states <- c("New York", "Texas", "California", "Illinois", "Texas", "Texas", "District of Columbia", "Florida", "Washington", "Pennsylvania", "California", "Colorado", "California", "California", "Nevada", "Massachusetts", "Louisiana")
+
+pop.est <- pop.est[(pop.est$NAME %in% cities),]; pop.est <- pop.est[(pop.est$STNAME %in% states),]
+#sorting pop.est
+pop.est<- pop.est[order(-pop.est$CENSUS2010POP),]; pop.est
+```
+
+# Phase V: Veggie Mijas' Visualizations {data-navmenu="Project Sections"}
+
+## Step by Step {.tabset}
+
+### <b><font face="Georgia" size="2em" color="#000000">VM Leadership Plots</font></b>
+
+First, it is important to show you the food lifestyles and pronoun groups of the leadership team. Veggie Mijas was founded by a vegan and queer woman of color, which feeds into their marketing. Since the collective has such a leader, this is why the collective mostly gathers interest of other vegan and queer woman of color. Despite the positive results, I would still recommend the leadership team continue to diversify themselves in terms of age and experience. It would be beneficial to the growth of the collective if we welcomed more folks of various backgrounds and experience to join our team and contribute to our efforts. I gathered this data for a project this past summer for Biostatistics and it is helpful to support my findings throughout this capstone.
+
+```{r PV Leadership Plots 1 to 3, fig.align='center', fig.width=20, fig.height=6}
+leadership.freq <- sort(table(vm_leadership$`Food Lifestyle`), decreasing = TRUE); leadership.freq <- as.data.frame(leadership.freq); colnames(leadership.freq) <- c('FL', 'Total')
+leadership.freq2 <- sort(table(vm_leadership$`Length of Food Lifestyle`), decreasing = TRUE); leadership.freq2 <- as.data.frame(leadership.freq2); colnames(leadership.freq2) <- c('Timespan', 'Total')
+leadership.freq3 <- sort(table(vm_leadership$`Pronoun Group`), decreasing = TRUE); leadership.freq3 <- as.data.frame(leadership.freq3); colnames(leadership.freq3) <- c('PG', 'Total')
+#create plots for leadership
+lead.plot <- ggplot(leadership.freq,aes(x=reorder(factor(FL), -Total),y=Total, fill=FL))+
+  geom_col(fill=vm_cols('forest green'))+
+  xlab('Food Lifestyle')+ylab('Total')+ggtitle('Food Lifestyles of Leadership Team')+theme(plot.title = element_text(hjust = 0.5), legend.position = "none"
+)+
+  scale_fill_vm(palette = "main", discrete = TRUE, reverse = FALSE)+
+  labs(fill = "Total Leaders")
+lead.plot2 <- ggplot(leadership.freq2,aes(x=reorder(factor(Timespan), -Total),y=Total, fill=Total))+
+  geom_col(fill=vm_cols('forest green'))+
+  xlab('Timespan')+ylab('Total')+ggtitle('Timespan of Food Lifestyle for Leadership Team')+theme(plot.title = element_text(hjust = 0.5), legend.position = "none"
+)+
+  scale_fill_vm(palette = "main", discrete = FALSE, reverse = TRUE)+
+  labs(fill = "Total Leaders")
+lead.plot3 <- ggplot(leadership.freq3,aes(x=reorder(factor(PG), -Total),y=Total, fill=Total))+
+  geom_col(fill=vm_cols('forest green'))+
+  xlab('Pronoun Group')+ylab('Total')+ggtitle('Pronoun Groups of Leadership Team')+theme(plot.title = element_text(hjust = 0.5), legend.position = "none"
+)+
+  scale_fill_vm(palette = "main", discrete = FALSE, reverse = TRUE)+
+  labs(fill = "Total Leaders")
+group.1 <- grid.arrange(lead.plot, lead.plot2, lead.plot3, ncol=1)
+grid.draw(group.1)
+```
+
+### <b><font face="Georgia" size="2em" color="#000000">Pronoun Groups for Interests vs Collective Plots</font></b>
+
+These next four plots I created were for the frequency tables I developed in Phase I and II. I chose bar graphs so I could see which groups in each plot had the greatest quantities. As expected, my findings here support my claim that Veggie Mijas gathers the most interest from folks who identify with she/her pronouns. One of my earlier recommendations would be to get more information on gender identity to give context to these pronouns. Even if someone identifies with she/her pronouns, it does not necessarily mean that they are also cisgender. The same can be said for those who use he/him pronouns.  
+
+```{r PV Pronoun Groups for Interests vs Collective Plots, fig.align='center', fig.width=20, fig.height=6}
+#pronoun groups for interests frequency plot
+ipg.plot <- ggplot(pg.agg2,aes(x=reorder(factor(pronoun_group), -frequency),y=frequency, fill=frequency))+
+  geom_col(fill=vm_cols('forest green'))+
+  xlab('Pronoun Groups')+ylab('Total')+ggtitle('Total per Pronoun Groups for Interests')+theme(plot.title = element_text(hjust = 0.5), legend.position = "none")+
+  scale_fill_vm(palette = "main", discrete = FALSE, reverse = TRUE)+
+  labs(fill = "Total Interests")
+#pronoun groups for collective frequency plot
+cpg.plot <- ggplot(pg.agg,aes(x=reorder(factor(pronoun_group), -frequency),y=frequency, fill=frequency))+
+  geom_col(fill=vm_cols('forest green'))+
+  xlab('Pronoun Groups')+ylab('Total')+ggtitle('Total per Pronoun Groups for Collective')+theme(plot.title = element_text(hjust = 0.5), legend.position = "none")+
+  scale_fill_vm(palette = "main", discrete = FALSE, reverse = TRUE)+
+  labs(fill = "Total Collective Members")
+group.2 <- grid.arrange(ipg.plot, cpg.plot, ncol=1)
+grid.draw(group.2)
+```
+
+### <b><font face="Georgia" size="2em" color="#000000">Interests vs Collective Members per City and State Plots</font></b>
+
+I wanted to show the total number of interests vs total number of collective members within the Veggie Mijas collective. We can see that for both interests and the collective, our top four states remained the same (Texas, California, New York, and Illinois). One point I wanted to make was the difference in states listed in both graphs. As mentioned previously, the collective list was implemented before the interest form so it had folks from cities and states that may not have been recorded on the interest form. For both graphs, I made sure to filter them by total entries greater than 10. I filtered them like this because if total entries are greater than 10, then I would need to keep an eye on those certain cities and states. Once they hit 15 or more, then I would notify the Recruitment Director of the city/state and let them know they can start looking for an organizer in this area. If there was already a chapter established, then I would not monitor if they hit more than 15 entries on the interest form or the collective list and just continued to update their entries weekly.
+
+Based on the highlighted bars on both graphs below, I would keep an eye on the following cities and states: Albany, NY | New Orleans, LA | Las Vegas, NV | San Diego, CA  
+
+```{r PV Interests and Collective Members per City and State Plots, fig.align='center', fig.width=22, fig.height=6}
+#collective members per state plot
+loc.plot <- ggplot(total.collectiveloc,aes(x=frequency,y=reorder(factor(loc), frequency), fill=frequency))+
+  geom_col(fill=total.collectiveloc$cond)+
+  xlab('Total')+ylab('City/State')+ggtitle('Total Collective Members per City')+theme(plot.title = element_text(hjust = 0.5), legend.position = "none")+
+  labs(fill = "Total Collective Members")
+#interests per state plot
+iloc.plot <- ggplot(total.interestloc, aes(x=frequency,y=reorder(factor(loc), frequency), fill=frequency))+
+  geom_col(fill=total.interestloc$cond)+
+  xlab('Total')+ylab('City/State')+ggtitle('Total Interests per City')+theme(plot.title = element_text(hjust = 0.5), legend.position = "none")+
+  labs(fill = "Total Interests")
+group.3 <- grid.arrange(loc.plot, iloc.plot, ncol=1)
+grid.draw(group.3)
+```
+
+### <b><font face="Georgia" size="2em" color="#000000">Food Lifestyle Plots</font></b>
+
+These two plots focus on the food lifestyles of Veggie Mijas' interested folks. One of the most interesting points in the first plot is that, next to those who follow a vegan/plant-based lifestyle, we have folks who are transitioning as the next biggest group. Veggie Mijas does pride themselves in sharing plant-based tips to everyone and how it can be accessible, regardless of your marginalized identity. Since "transitioning" is the second biggest choice here, I see this supporting Veggie Mijas' efforts to share their knowledge with communities throughout the United States. For the second plot here, I would like to create it into a regional map to see how the food lifestyles differ per region throughout the United States. 
+
+```{r PV Food Lifestyle Plots, fig.align='center', fig.width=20, fig.height=6}
+#food lifestyle for interests frequency plot
+fl.plot <- ggplot(fl.agg,aes(x=reorder(factor(lifestyle_group), -frequency),y=frequency, fill = frequency))+
+  geom_col(fill=vm_cols('forest green'))+
+  xlab('Food Lifestyle Groups')+ylab('Total')+ ggtitle('Total Interests per Food Lifestyle')+theme(plot.title = element_text(hjust = 0.5), legend.position = "none") +
+  labs(fill = "Total Interests")
+# food lifestyle per state plot
+sfl <- subset(vm_interests[,c(2,4)])
+fl.tfmatrix3 <- as.data.frame(sapply(as.character(w2), grepl, sfl$food_lifestyle))
+fl.tfmatrix3 <- fl.tfmatrix3 %>% mutate(fl_type =
+                                        case_when(
+                                          transition | learn | try | research | work == "TRUE" ~ "Transitioning",
+                                          vegan | plant == "TRUE" ~ "Vegan/Plant Based",
+                                          mostly | flex == "TRUE"~ "Vegan/Plant Based",
+                                          vegetarian == "TRUE" ~ "Vegetarian",
+                                          omnivore | fish | chicken | turkey == "TRUE" ~ "Omnivore",
+                                          pescatarian == "TRUE" ~ "Pescatarian",
+                                          fl.tfmatrix3$`prefer not to answer` == "TRUE" ~ "Other"))
+sfl <- cbind(sfl, fl.tfmatrix3$fl_type); colnames(sfl) <- c("food_lifestyle","state", "FL");  sfl <- sfl %>% select(food_lifestyle, FL, state); sfl$state <- str_to_title(sfl$state)
+sfl[c(79),2] <- 'Other'; sfl <- sfl[-c(1)]; sfl[sfl$state == "Dc", c("state")] <- 'District of Columbia'
+
+sfl <- sfl %>% 
+  group_by(state, FL) %>% 
+  mutate(value = 1:n())
+sfl <- as.data.frame(sfl)
+
+#adding regions to sfl data frame
+NE.name <- c("Connecticut","Maine","Massachusetts","New Hampshire",
+             "Rhode Island","Vermont","New Jersey","New York",
+             "Pennsylvania")
+NE.abrv <- c("CT","ME","MA","NH","RI","VT","NJ","NY","PA")
+NE.ref <- c(NE.name,NE.abrv)
+
+MW.name <- c("Indiana","Illinois","Michigan","Ohio","Wisconsin",
+             "Iowa","Kansas","Minnesota","Missouri","Nebraska",
+             "North Dakota","South Dakota")
+MW.abrv <- c("IN","IL","MI","OH","WI","IA","KS","MN","MO","NE",
+             "ND","SD")
+MW.ref <- c(MW.name,MW.abrv)
+
+S.name <- c("Delaware","District of Columbia","Florida","Georgia",
+            "Maryland","North Carolina","South Carolina","Virginia",
+            "West Virginia","Alabama","Kentucky","Mississippi",
+            "Tennessee","Arkansas","Louisiana","Oklahoma","Texas")
+S.abrv <- c("DE","DC","FL","GA","MD","NC","SC","VA","WV","AL",
+            "KY","MS","TN","AR","LA","OK","TX")
+S.ref <- c(S.name,S.abrv)
+
+W.name <- c("Arizona","Colorado","Idaho","New Mexico","Montana",
+            "Utah","Nevada","Wyoming","Alaska","California",
+            "Hawaii","Oregon","Washington")
+W.abrv <- c("AZ","CO","ID","NM","MT","UT","NV","WY","AK","CA",
+            "HI","OR","WA")
+W.ref <- c(W.name,W.abrv)
+
+region.list <- list(
+  Northeast=NE.ref,
+  Midwest=MW.ref,
+  South=S.ref,
+  West=W.ref)
+
+sfl$regions <- sapply(sfl$state, 
+                 function(x) names(region.list)[grep(x,region.list)])
+sfl$abbr <- state.abb[match(sfl$state,state.name)]
+sfl <- sfl %>% select(FL, state, abbr, regions, value)
+#create sfl plot
+sflplot <- ggplot(sfl, aes(fill = FL, y = regions, x = sort(value, decreasing = FALSE))) +
+    geom_bar(position="fill", stat = "identity") +
+  xlab('Value')+ylab('Region')+ ggtitle('Food Lifestyles per US Region')+theme(plot.title = element_text(hjust = 0.5)) +
+  scale_fill_manual(values = c("#df8252", "#f0a278", "#f8cfa2", "#f1bc6f", "#a19862", "#d0c393")) +
+  guides(fill = guide_legend(title = "Food Lifestyle"))
+
+group.4 <- grid.arrange(fl.plot, sflplot, ncol=2)
+grid.draw(group.4)
+```
+
+### <b><font face="Georgia" size="2em" color="#000000">Pronouns per Food Lifestyle Plots</font></b>
+
+This plot focuses on the pronouns of Veggie Mijas' interested folks per the food lifestyles they follow. It is interesting to see that those who identify with he/him pronouns are the ones who most identify with an omnivorous lifestyle. I also noticed that those who chose to select "other" for their food lifestyle have the most variety in their pronoun groups.  
+
+```{r PV Pronouns per Food Lifestyle Plots, fig.align='center', fig.width=20, fig.height=6}
+# pronouns of interests per food lifestyle plot
+pfl <- subset(vm_interests[,c(2,5)])
+fl.tfmatrix2 <- as.data.frame(sapply(as.character(w2), grepl, pfl$food_lifestyle))
+fl.tfmatrix2 <- fl.tfmatrix2 %>% mutate(fl_type =
+                                        case_when(
+                                          transition | learn | try | research | work == "TRUE" ~ "Transitioning",
+                                          vegan | plant == "TRUE" ~ "Vegan/Plant Based",
+                                          mostly | flex == "TRUE"~ "Vegan/Plant Based",
+                                          vegetarian == "TRUE" ~ "Vegetarian",
+                                          omnivore | fish | chicken | turkey == "TRUE" ~ "Omnivore",
+                                          pescatarian == "TRUE" ~ "Pescatarian",
+                                          fl.tfmatrix2$`prefer not to answer` == "TRUE" ~ "Other"))
+pronoun.tfmatrix3 <- as.data.frame(sapply(as.character(w1), grepl, pfl$pronouns))
+pronoun.tfmatrix3 <- pronoun.tfmatrix3 %>% mutate(PG =
+                     case_when(all == "TRUE" ~ "all",
+                               pronoun.tfmatrix3$`two spirit` == "TRUE"~ "all",
+                               she & they == "TRUE" ~ "ST",
+                               her & they == "TRUE" ~ "ST",
+                               she & them == "TRUE" ~ "ST",
+                               they & them == "TRUE" ~ "TTT",
+                               he & they == "TRUE" ~ "HT",
+                               they | them == "TRUE" ~ "TTT",
+                               she & her & hers == "TRUE" ~ "SHH",
+                               she & her == "TRUE" ~ "SHH",
+                               she == "TRUE" ~ "SHH",
+                               her == "TRUE" ~ "SHH",
+                               he & him == "TRUE" ~ "HHH",
+                               undecided == "TRUE" ~ "Other"))
+pfl <- cbind(pfl, fl.tfmatrix2$fl_type, pronoun.tfmatrix3$PG); colnames(pfl) <- c("food_lifestyle","pronouns", "FL", "PG");  pfl <- pfl %>% select(food_lifestyle, FL, pronouns, PG); pfl[c(251, 252, 253, 254, 255, 297, 358, 463),4] <- 'Other'; pfl[c(251, 252, 253, 254, 255),3] <- 'Other'; pfl[c(79),2] <- 'Other'; pfl <- pfl[-c(1,3)]
+pfl <- pfl %>% 
+  group_by(FL, PG) %>% 
+  mutate(value = 1:n())
+pfl <- as.data.frame(pfl)
+
+pflplot <- ggplot(pfl, aes(fill = sort(PG, decreasing = TRUE), y = value, x = FL)) +
+    geom_bar(position="fill", stat = "identity") +
+  xlab('Food Lifestyle Groups')+ylab('Value')+ ggtitle('Pronoun Groups of Interests per Food Lifestyle')+theme(plot.title = element_text(hjust = 0.5)) +
+  scale_fill_manual(values = c("#df8252", "#f0a278", "#f1bc6f", "#f8cfa2", "#a19862", "#d0c393", "#a4a697"))+
+  labs(fill = "Pronoun Groups") + guides(fill = guide_legend(reverse=TRUE)); pflplot
+```
+
+### <b><font face="Georgia" size="2em" color="#000000">Total Interests and Populations per State Plots</font></b>
+
+These two maps show us the total interests per state and the total populations per state. For the population map, I chose the cities and states found in the collective list since these also included Florida and Massachusetts. As I've stated, before I joined and created the interest form, the collective list already had folks from all over the United States. With the interest form, at the time I pulled this data, it did not include Florida and Massachusetts as of yet. Even with this difference, we can see similarities in the various numbers we've collected in interests and how it is related to the total population with each state.  
+
+```{r PV Total Interests and Populations per State Plots, fig.align='center', fig.width=20, fig.height=6}
+us.cities <- as.data.frame(us.cities)
+us.cities <- rename(us.cities, abbr = country.etc)
+us.cities <- rename(us.cities, city = name)
+us.cities$city <- substr(us.cities$city,1,nchar(us.cities$city)-3)
+us.cities <- rename(us.cities, lat.1 = capital)
+us.cities[us.cities$abbr == "DC", c("city")] <- 'Washington'
+ 
+us.cities <- us.cities %>% select(city, abbr, pop, lat, long) %>% filter(pop > 300000); us.cities <- us.cities[order(-us.cities$pop),]; us.cities <- filter(us.cities, city %in% cities); us.cities <- us.cities[order(us.cities$abbr, decreasing = FALSE),]
+us.cities$state <- state.name[match(us.cities$abbr,state.abb)]
+us.cities <- us.cities %>% relocate(state, .after = city)
+us.cities[us.cities$city == "Washington", c("state")] <- 'District of Columbia'
+
+us.cities <- us.cities %>% select(long, lat, state, abbr, city, pop) #reformatting the data frame
+us.cities <- usmap_transform(us.cities)
+statepop <- us.cities %>% group_by(abbr) %>% summarize(popsum = sum(pop)) #create a subset of state population
+statepop$state <- state.name[match(statepop$abbr,state.abb)] #get list of state names from abbr column
+statepop[statepop$abbr == "DC", c("state")] <- 'District of Columbia' #update missing state name
+statepop <- statepop %>% relocate(state, .after = abbr) #move state column after abbr column
+numCollectiveMem <- c(133, 20, 38, 33, 72, 11, 12, 13, 116, 32, 177, 33) #number of collective members in order of the states in statepop
+statepop <- cbind(statepop, numCollectiveMem) #merge them all into one data frame
+
+#plot population with top states with chapters
+pop_plot<- plot_usmap(data = statepop, values = "popsum", color = "gray34") +
+  scale_fill_vm(palette = "main", discrete = FALSE, reverse = TRUE, name = "Population (2006)", label = scales::comma) +
+  theme(legend.position = "right") +
+  ggrepel::geom_label_repel(data = us.cities,
+             aes(x = long.1, y = lat.1, label = city),
+             size = 3, alpha = 0.8,
+             label.r = unit(0.5, "lines"), label.size = 0.5,
+             segment.color = "red", segment.size = 1,
+             seed = 1002) +
+   scale_size_continuous(range = c(1, 16),
+                        label = scales::comma) +
+  geom_point(data = us.cities,
+             aes(x = long.1, y = lat.1, size = pop),
+             color = "forestgreen", alpha = 0.5) +
+    ggtitle(label = "Total population in states with Veggie Mijas Chapters")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+cities2 <- c("New York", "Austin", "Los Angeles",  "Chicago",  "Dallas",  "Houston",  "Washington", "Seattle", "Philadelphia", "Denver", "San Diego",  "Las Vegas", "New Orleans")
+us_interests <- filter(us.cities, city %in% cities2)
+numInterest <- c(43, 10, 18, 11, 28, 11, 11, 35, 13, 10, 22, 43, 14) #number of interests in order of the states in us_interests
+us_interests <- cbind(us_interests, numInterest)
+
+#plot interests with top states with chapters
+int_plot<- plot_usmap(data = us_interests, values = "numInterest", color = "gray34") +
+ scale_fill_vm(palette = "main", discrete = FALSE, reverse = TRUE, name = "Interests", label = scales::comma) +
+  theme(legend.position = "right")+
+  theme(legend.position = "right") +
+  ggrepel::geom_label_repel(data = us_interests,
+             aes(x = long.1, y = lat.1, label = city),
+             size = 3, alpha = 0.8,
+             label.r = unit(0.5, "lines"), label.size = 0.5,
+             segment.color = "red", segment.size = 1) +
+  geom_point(data = us_interests,
+             aes(x = long.1, y = lat.1, size = numInterest),
+             color = "forestgreen", alpha = 0.5) +
+    ggtitle(label = "Total interests in states with Veggie Mijas Chapters")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+grid.arrange(pop_plot, int_plot, ncol=2)
+```
+
+### <b><font face="Georgia" size="2em" color="#000000">Interests per Events through Time Plot</font></b>
+
+I wanted this graph to see if there would be any spikes in interests depending on the total events we have per month. Unfortunately, I did not see any relationship here. Some factors to consider would be the transition to online events with COVID-19 impacting their ability to host in-person events. Also, it is unclear whether or not organizers were sharing the interest form with their participants. With this information, I would strongly encourage all organizers to distribute the interest form at the beginning of each event to increase the number of interests and record who attended their events in case there were any new folks who did not originally register.  
+
+```{r PV Interests per Events through Time Plot, fig.align='center', fig.width=20, fig.height=6}
+#creating interest over time bar graph
+vm_interests$timestamp <- format(as.Date(vm_interests$timestamp), "%Y-%m")
+dateInterests <- sort(table(vm_interests$timestamp)); dateInterests <- as.data.frame(dateInterests); dateInterests <- rename(dateInterests, date = Var1); dateInterests$date <- ym(as.character(dateInterests$date)); dateInterests <- dateInterests[order(dateInterests$date),]
+
+vm_events$Date <- format(vm_events$Date, "%Y-%m"); dateEvents <- sort(table(vm_events$Date)); dateEvents <- as.data.frame(dateEvents); dateEvents <- rename(dateEvents, date = Var1); dateEvents$date <- ym(as.character(dateEvents$date))
+dateEvents <- dateEvents[order(dateEvents$date),]
+
+plot3 <- ggplot(dateInterests, aes(date, Freq, fill = Freq)) +
+  geom_bar(stat="identity") +
+  geom_vline(xintercept = dateEvents$date, linetype="dotted") +
+  geom_text(aes(x = date, y = rep(60,21), label = Freq), data = dateEvents) +
+  geom_col(fill=vm_cols('forest green'))+
+  geom_line(aes(x = date, y = Freq), color=vm_cols('clementine'), lwd=1.5) +
+  geom_point(x = dateInterests$date, y = dateInterests$Freq, color = vm_cols('deep cranberry'), size = 3)+
+  labs(fill = "Total Interests") +
+  xlab('Timeline (year-month)')+ylab('Total')+ggtitle(label = "Total Interest in Veggie Mijas from \nNov 2019 to Aug 2021", subtitle = "(events per month indicated by dotted lines)")+
+  theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5), legend.position = "none"); plot3
+```
+
+### <b><font face="Georgia" size="2em" color="#000000">Ticket Ratios per Events Plot</font></b>
+
+For my final plot, I wanted to see the ticket ratios per each past event that each chapter hosted. A majority of the events have sold more tickets than they had left over. There may be differences depending on how long the chapter has been established and also the total number of chapters in each state.  
+
+```{r PV Ticket Ratios per Events Plot, fig.align='center', fig.width=20, fig.height=6}
+vm_events$city <- c("Washington", "Los Angeles", "Orlando", "Los Angeles", "Washington", "Los Angeles", "Dallas", "Miami", "New York", "Los Angeles", "Dallas", "Los Angeles", "Austin", "Dallas", "Miami", "Oakland", "Miami", "Chicago", "Seattle", "New York", "Austin", "Dallas", "Chicago", "Seattle", "Orlando", "Dallas", "Chicago", "Washington", "Philadelphia", "Dallas", "Houston", "Washington", "Dallas", "New York", "Philadelphia", "Chicago", "Denver", "Philadelphia", "Orlando", "Denver", "Philadelphia", "Chicago", "Springfield", "Seattle", "Denver", "Philadelphia", "Austin", "Philadelphia", "Los Angeles", "Philadelphia", "Denver", "Philadelphia", "Orlando", "Houston", "Philadelphia", "Denver", "Philadelphia", "Dallas", "Seattle", "Denver", "Washington", "Philadelphia", "Chicago", "New York", "Washington", "Washington", "Philadelphia", "Houston", "Austin", "Philadelphia", "Orlando", "New York", "Seattle", "Washington", "New York", "None", "Denver", "Houston", "Philadelphia", "Chicago", "Denver", "Philadelphia", "New York", "Washington", "Orlando", "Philadelphia", "Los Angeles", "Chicago", "Washington", "Orlando", "New York", "Washington", "Philadelphia", "Austin", "Denver", "Philadelphia", "Las Vegas", "New York", "New York", "Philadelphia")
+vm_events$state <- c("District of Columbia", "California", "Florida", "California", "District of Columbia", "California", "Texas", "Florida", "New York", "California", "Texas", "California", "Texas", "Texas", "Florida", "California", "Florida", "Illinois", "Washington", "New York", "Texas", "Texas", "Illinois", "Washington", "Florida", "Texas", "Illinois", "District of Columbia", "Pennsylvania", "Texas", "Texas", "District of Columbia", "Texas", "New York", "Pennsylvania", "Illinois", "Colorado", "Pennsylvania", "Florida", "Colorado", "Pennsylvania", "Illinois", "Vermont", "Washington", "Colorado", "Pennsylvania", "Texas", "Pennsylvania", "California", "Pennsylvania", "Colorado", "Pennsylvania", "Florida", "Texas", "Pennsylvania", "Colorado", "Pennsylvania", "Texas", "Washington", "Colorado", "District of Columbia", "Pennsylvania", "Illinois", "New York", "District of Columbia", "District of Columbia", "Pennsylvania", "Texas", "Texas", "Pennsylvania", "Florida", "New York", "Washington", "District of Columbia", "New York", "None", "Colorado", "Texas", "Pennsylvania", "Illinois", "Colorado", "Pennsylvania", "New York", "District of Columbia", "Florida", "Pennsylvania", "California", "Illinois", "District of Columbia", "Florida", "New York", "District of Columbia", "Pennsylvania", "Texas", "Colorado", "Pennsylvania", "Nevada", "New York", "New York", "Pennsylvania")
+
+vm_events$label <- paste(vm_events$city, vm_events$ticket_ratio, sep = " | ")
+
+tix.plot <- ggplot(vm_events, aes(area = ticket_ratio, fill = ticket_ratio,
+               label = label, subgroup = state)) +
+  geom_treemap() +
+  geom_treemap_subgroup_border(colour = "gray94", size = 8) +
+  geom_treemap_subgroup_text(place = "centre", grow = TRUE,
+                             alpha = 0.35, colour = "black",
+                             fontface = "italic") +
+  geom_treemap_text(colour = "white", place = "centre",
+                    size = 15, alpha = 0.85, grow = TRUE) +
+  scale_fill_vm(palette = "main", discrete = FALSE, reverse = TRUE) +
+  ggtitle(label = "Total events in each state by city \n(ticket ratios shown below of total sold to total tickets made available)")+
+  theme(plot.title = element_text(hjust = 0.5)) +
+  guides(fill=guide_legend(title="Ticket Ratio Scale")); tix.plot
+```
+
+# Conclusion 
+
+### <b><font face="Georgia" size="2em" color="#000000">Final Thoughts</font></b>
+
+In conclusion, Veggie Mijas is continuing to expand their reach throughout the United States and achieving national recognition for their work in the community. It is my hope that, with this data, they can re-strategize their current efforts and restructure the way they gather interests. Veggie Mijas is a unique collective, where individuals with similar interests have been able to gather and share their knowledge with one another. It started off with distributing easy recipes for college students and now has become focused on the intersectionality of food justice. It is important that those in leadership positions understand the needs and mission of the collective, especially as it pertains to veganism, plant-based living, and experience.  
+
+**References:**  
+
+Veggie Mijas (2018). https://www.veggiemijas.com/mission
+
+```{r, fig.align='center', fig.width=15, fig.height=10}
+#knitr::include_graphics("TransparentLogo2.jpg")
+par(mar = c(10, 2, 10, 2))
+vm <- load.image("VeggieMijas.jpg"); plot(vm, axes = FALSE)
+```
